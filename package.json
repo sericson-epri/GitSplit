@@ -1,0 +1,63 @@
+{
+  "name": "gitsplit",
+  "displayName": "GitSplit",
+  "description": "Cherry-pick individual changed lines from a messy Git branch and push them to a new clean branch for a focused pull request.",
+  "version": "0.1.0",
+  "publisher": "gitsplit",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gitSplit.selectChanges",
+        "title": "GitSplit: Select Changes",
+        "icon": "$(git-pull-request)"
+      }
+    ],
+    "configuration": {
+      "title": "GitSplit",
+      "properties": {
+        "gitSplit.baseBranch": {
+          "type": "string",
+          "default": "main",
+          "description": "Base branch to diff against when selecting changes."
+        },
+        "gitSplit.autoPush": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically push the new branch to the remote after committing."
+        },
+        "gitSplit.autoOpenPR": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open the GitHub Create PR URL in the browser after pushing."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTests.js"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.5",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.3.8",
+    "mocha": "^10.3.0",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "simple-git": "^3.22.0"
+  }
+}
