@@ -16,11 +16,47 @@
   "contributes": {
     "commands": [
       {
+        "command": "gitSplit.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitSplit.createBranch",
+        "title": "Create Branch & Commit",
+        "icon": "$(git-branch-create)"
+      },
+      {
         "command": "gitSplit.selectChanges",
         "title": "GitSplit: Select Changes",
         "icon": "$(git-pull-request)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": []
+    },
+    "views": {
+      "scm": [
+        {
+          "id": "gitSplitView",
+          "name": "GitSplit",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "gitSplit.createBranch",
+          "when": "view == gitSplitView",
+          "group": "navigation"
+        },
+        {
+          "command": "gitSplit.refresh",
+          "when": "view == gitSplitView",
+          "group": "navigation"
+        }
+      ]
+    },
     "configuration": {
       "title": "GitSplit",
       "properties": {

@@ -1,213 +1,197 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { GitService } from '../git/gitService';
 import { generatePatch } from '../patch/patchGenerator';
 import { DiffFile } from '../git/diffParser';
+import { SelectionStore } from '../views/selectionStore';
 
-interface CreateBranchMessage {
-  type: 'createBranch';
-  branchName: string;
-  commitMessage: string;
-  selectedLineIds: string[];
-}
+interface LineToggleMessage   { type: 'lineToggle';  id: string; checked: boolean; }
+interface HunkToggleMessage   { type: 'hunkToggle';  lineIds: string[]; checked: boolean; }
+interface ReadyMessage        { type: 'ready'; }
 
-interface ReadyMessage {
-  type: 'ready';
-}
+type WebviewInbound = LineToggleMessage | HunkToggleMessage | ReadyMessage;
 
-type WebviewInbound = CreateBranchMessage | ReadyMessage;
-
-/** VS Code webview panel that hosts the diff selection UI. */
+/** VS Code webview panel that shows a single file's diff for line-level selection. */
 export class DiffPanelProvider implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
   private readonly disposables: vscode.Disposable[] = [];
+  private currentFile: DiffFile | undefined;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
     private readonly gitService: GitService,
     private readonly workspaceRoot: string,
+    private readonly store: SelectionStore,
+    /** Called after any line/hunk toggle so the tree view can refresh. */
+    private readonly onSelectionChanged: (fileIndex: number) => void,
   ) {}
 
-  /** Open (or reveal) the diff selection panel. */
-  async show(baseBranch: string): Promise<void> {
-    // Reuse existing panel if open
-    if (this.panel) {
-      this.panel.reveal(vscode.ViewColumn.One);
-      await this.loadDiff(baseBranch);
-      return;
+  /** Open or update the panel to show a specific file's diff. */
+  showFile(file: DiffFile): void {
+    this.currentFile = file;
+
+    if (!this.panel) {
+      this.panel = vscode.window.createWebviewPanel(
+        'gitSplitDiff',
+        'GitSplit Diff',
+        vscode.ViewColumn.One,
+        {
+          enableScripts: true,
+          localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'src', 'webview', 'media')],
+          retainContextWhenHidden: true,
+        },
+      );
+
+      this.panel.webview.html = this.buildHtml(this.panel.webview);
+
+      this.panel.webview.onDidReceiveMessage(
+        (msg: WebviewInbound) => this.handleMessage(msg),
+        undefined,
+        this.disposables,
+      );
+
+      this.panel.onDidDispose(() => {
+        this.panel = undefined;
+      }, undefined, this.disposables);
+    } else {
+      this.panel.reveal(vscode.ViewColumn.One, true);
     }
 
-    this.panel = vscode.window.createWebviewPanel(
-      'gitSplitDiff',
-      'GitSplit: Select Changes',
-      vscode.ViewColumn.One,
-      {
-        enableScripts: true,
-        localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'src', 'webview', 'media')],
-        retainContextWhenHidden: true,
-      },
-    );
-
-    this.panel.webview.html = this.buildHtml(this.panel.webview);
-
-    this.panel.webview.onDidReceiveMessage(
-      (msg: WebviewInbound) => this.handleMessage(msg, baseBranch),
-      undefined,
-      this.disposables,
-    );
-
-    this.panel.onDidDispose(() => {
-      this.panel = undefined;
-    }, undefined, this.disposables);
-
-    // Wait for the webview to signal it's ready, then send diff data
-    await this.loadDiff(baseBranch);
+    const displayPath = file.newPath || file.oldPath;
+    this.panel.title = path.basename(displayPath);
+    this.sendFileData(file);
   }
 
-  private async loadDiff(baseBranch: string): Promise<void> {
-    this.postMessage({ type: 'loading' });
-    try {
-      const files = await this.gitService.getDiff(baseBranch);
-      this.postMessage({ type: 'diffData', files, baseBranch });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.postMessage({ type: 'error', message: `Failed to get diff: ${msg}` });
-    }
+  private sendFileData(file: DiffFile): void {
+    this.postMessage({
+      type: 'fileData',
+      file,
+      selectedIds: this.store.selectedIdsForFile(file.index),
+    });
   }
 
-  private async handleMessage(msg: WebviewInbound, baseBranch: string): Promise<void> {
+  private handleMessage(msg: WebviewInbound): void {
     if (msg.type === 'ready') {
-      await this.loadDiff(baseBranch);
+      if (this.currentFile) this.sendFileData(this.currentFile);
       return;
     }
 
-    if (msg.type === 'createBranch') {
-      await this.handleCreateBranch(msg, baseBranch);
+    if (msg.type === 'lineToggle') {
+      this.store.setLine(msg.id, msg.checked);
+      if (this.currentFile) this.onSelectionChanged(this.currentFile.index);
+      return;
+    }
+
+    if (msg.type === 'hunkToggle') {
+      this.store.setHunk(msg.lineIds, msg.checked);
+      if (this.currentFile) this.onSelectionChanged(this.currentFile.index);
+      return;
     }
   }
 
-  private async handleCreateBranch(
-    msg: CreateBranchMessage,
+  /** Create the new branch from the current selection in the store. */
+  async handleCreateBranch(
+    branchName: string,
+    commitMessage: string,
     baseBranch: string,
+    files: DiffFile[],
   ): Promise<void> {
-    const { branchName, commitMessage, selectedLineIds } = msg;
+    const selectedLineIds = this.store.getSelectedIds();
 
-    // Validate inputs
-    if (!branchName.trim()) {
-      this.postMessage({ type: 'error', message: 'Branch name cannot be empty.' });
-      return;
-    }
-    if (!commitMessage.trim()) {
-      this.postMessage({ type: 'error', message: 'Commit message cannot be empty.' });
-      return;
-    }
     if (selectedLineIds.length === 0) {
-      this.postMessage({ type: 'error', message: 'No lines selected.' });
+      vscode.window.showErrorMessage('GitSplit: No lines selected.');
       return;
     }
 
     // Check for uncommitted changes
-    try {
-      if (await this.gitService.hasUncommittedChanges()) {
-        const choice = await vscode.window.showWarningMessage(
-          'Your working tree has uncommitted changes. GitSplit will stash them before creating the branch and restore them afterwards.',
-          'Continue',
-          'Cancel',
-        );
-        if (choice !== 'Continue') return;
-        // Stash
-        await this.stash();
-      }
-    } catch (err: unknown) {
-      this.showError(err);
-      return;
+    if (await this.gitService.hasUncommittedChanges().catch(() => false)) {
+      const choice = await vscode.window.showWarningMessage(
+        'GitSplit: Your working tree has uncommitted changes. They will be stashed before creating the branch and restored afterwards.',
+        'Continue',
+        'Cancel',
+      );
+      if (choice !== 'Continue') return;
     }
 
     let stashed = false;
     const originalBranch = await this.gitService.currentBranch().catch(() => '');
 
-    try {
-      stashed = await this.gitService.hasUncommittedChanges();
-      if (stashed) {
-        await this.stash();
-      }
-
-      // Check if target branch already exists
-      if (await this.gitService.branchExists(branchName)) {
-        this.postMessage({
-          type: 'error',
-          message: `Branch "${branchName}" already exists. Please choose a different name.`,
-        });
-        return;
-      }
-
-      this.postMessage({ type: 'progress', message: 'Getting diff…' });
-      const files: DiffFile[] = await this.gitService.getDiff(baseBranch);
-      const selectedSet = new Set(selectedLineIds);
-      const patch = generatePatch(files, selectedSet);
-
-      if (!patch.trim()) {
-        this.postMessage({ type: 'error', message: 'Selected lines produced an empty patch.' });
-        return;
-      }
-
-      this.postMessage({ type: 'progress', message: `Creating branch "${branchName}"…` });
-      await this.gitService.createBranchFrom(branchName, baseBranch);
-
-      this.postMessage({ type: 'progress', message: 'Applying patch…' });
-      try {
-        await this.gitService.applyPatch(patch);
-      } catch (applyErr: unknown) {
-        // Clean up the newly created branch before surfacing error
-        await this.gitService.checkout(originalBranch).catch(() => undefined);
-        await this.gitService.deleteBranch(branchName).catch(() => undefined);
-        const msg2 = applyErr instanceof Error ? applyErr.message : String(applyErr);
-        this.postMessage({ type: 'error', message: `Patch could not be applied cleanly:\n${msg2}` });
-        return;
-      }
-
-      this.postMessage({ type: 'progress', message: 'Committing…' });
-      await this.gitService.commit(commitMessage);
-
-      const config = vscode.workspace.getConfiguration('gitSplit');
-      const autoPush: boolean = config.get('autoPush', false);
-      const autoOpenPR: boolean = config.get('autoOpenPR', true);
-
-      let prUrl: string | null = null;
-
-      if (autoPush) {
-        this.postMessage({ type: 'progress', message: 'Pushing branch…' });
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'GitSplit', cancellable: false },
+      async (progress) => {
         try {
-          await this.gitService.push(branchName);
-          prUrl = await this.gitService.getPRUrl(branchName, baseBranch);
-        } catch (pushErr: unknown) {
-          vscode.window.showWarningMessage(
-            `Branch committed locally but push failed: ${pushErr instanceof Error ? pushErr.message : String(pushErr)}`,
+          stashed = await this.gitService.hasUncommittedChanges().catch(() => false);
+          if (stashed) {
+            progress.report({ message: 'Stashing uncommitted changes…' });
+            await this.stash();
+          }
+
+          if (await this.gitService.branchExists(branchName)) {
+            vscode.window.showErrorMessage(
+              `GitSplit: Branch "${branchName}" already exists. Choose a different name.`,
+            );
+            return;
+          }
+
+          progress.report({ message: 'Generating patch…' });
+          const selectedSet = new Set(selectedLineIds);
+          const patch = generatePatch(files, selectedSet);
+
+          if (!patch.trim()) {
+            vscode.window.showErrorMessage('GitSplit: Selected lines produced an empty patch.');
+            return;
+          }
+
+          progress.report({ message: `Creating branch "${branchName}"…` });
+          await this.gitService.createBranchFrom(branchName, baseBranch);
+
+          progress.report({ message: 'Applying patch…' });
+          try {
+            await this.gitService.applyPatch(patch);
+          } catch (applyErr: unknown) {
+            await this.gitService.checkout(originalBranch).catch(() => undefined);
+            await this.gitService.deleteBranch(branchName).catch(() => undefined);
+            const m = applyErr instanceof Error ? applyErr.message : String(applyErr);
+            vscode.window.showErrorMessage(`GitSplit: Patch could not be applied:\n${m}`);
+            return;
+          }
+
+          progress.report({ message: 'Committing…' });
+          await this.gitService.commit(commitMessage);
+
+          const config = vscode.workspace.getConfiguration('gitSplit');
+          const autoPush: boolean = config.get('autoPush', false);
+          const autoOpenPR: boolean = config.get('autoOpenPR', true);
+          let prUrl: string | null = null;
+
+          if (autoPush) {
+            progress.report({ message: 'Pushing branch…' });
+            try {
+              await this.gitService.push(branchName);
+              prUrl = await this.gitService.getPRUrl(branchName, baseBranch);
+            } catch (pushErr: unknown) {
+              vscode.window.showWarningMessage(
+                `GitSplit: Branch committed but push failed: ${pushErr instanceof Error ? pushErr.message : String(pushErr)}`,
+              );
+            }
+          }
+
+          if (prUrl && autoOpenPR) {
+            await vscode.env.openExternal(vscode.Uri.parse(prUrl));
+          }
+
+          const pushNote = autoPush ? ' Branch pushed.' : ' Push it manually when ready.';
+          vscode.window.showInformationMessage(
+            `GitSplit: Branch "${branchName}" created successfully!${pushNote}`,
           );
+
+          await this.gitService.checkout(originalBranch).catch(() => undefined);
+
+        } finally {
+          if (stashed) await this.unstash().catch(() => undefined);
         }
-      }
-
-      if (prUrl && autoOpenPR) {
-        await vscode.env.openExternal(vscode.Uri.parse(prUrl));
-      }
-
-      this.postMessage({
-        type: 'success',
-        message: `Branch "${branchName}" created successfully!${autoPush ? ' Branch pushed.' : ' Push it manually when ready.'}`,
-        prUrl: prUrl ?? undefined,
-      });
-
-      // Switch back to original branch so user isn't left on the new branch
-      await this.gitService.checkout(originalBranch).catch(() => undefined);
-
-    } catch (err: unknown) {
-      this.showError(err);
-    } finally {
-      if (stashed) {
-        await this.unstash().catch(() => undefined);
-      }
-    }
+      },
+    );
   }
 
   private async stash(): Promise<void> {
@@ -226,28 +210,18 @@ export class DiffPanelProvider implements vscode.Disposable {
     });
   }
 
-  private showError(err: unknown): void {
-    const msg = err instanceof Error ? err.message : String(err);
-    this.postMessage({ type: 'error', message: msg });
-    vscode.window.showErrorMessage(`GitSplit: ${msg}`);
-  }
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private postMessage(msg: Record<string, any>): void {
     this.panel?.webview.postMessage(msg);
   }
 
   private buildHtml(webview: vscode.Webview): string {
-    // Try to load from media files on disk; fall back to inline.
-    const mediaDir = path.join(this.extensionUri.fsPath, 'src', 'webview', 'media');
-
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'src', 'webview', 'media', 'main.js'),
     );
     const styleUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'src', 'webview', 'media', 'style.css'),
     );
-
     const nonce = getNonce();
 
     return /* html */`<!DOCTYPE html>
@@ -260,53 +234,20 @@ export class DiffPanelProvider implements vscode.Disposable {
              script-src 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${styleUri}">
-  <title>GitSplit</title>
+  <title>GitSplit Diff</title>
 </head>
 <body>
   <div id="app">
-    <div id="toolbar">
-      <h1 class="logo">🔀 GitSplit</h1>
-      <div id="toolbar-actions">
-        <button id="btn-select-all" class="btn btn-secondary">Select All</button>
-        <button id="btn-deselect-all" class="btn btn-secondary">Deselect All</button>
-        <button id="btn-create" class="btn btn-primary" disabled>Create Branch &amp; Commit</button>
-      </div>
+    <div id="file-header">
+      <span id="file-badge" class="file-badge mod"></span>
+      <span id="file-path">—</span>
     </div>
-
-    <div id="main-area">
-      <div id="file-list-panel">
-        <div class="panel-header">Changed Files</div>
-        <div id="file-list"></div>
+    <div id="diff-scroll">
+      <div id="diff-content">
+        <div class="placeholder">Click a file in the GitSplit sidebar to view its diff.</div>
       </div>
-      <div id="diff-panel">
-        <div id="diff-content">
-          <div class="placeholder">Loading diff…</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Create Branch Modal -->
-    <div id="modal-overlay" class="hidden">
-      <div id="modal">
-        <h2>Create Branch &amp; Commit</h2>
-        <label for="input-branch">New branch name</label>
-        <input id="input-branch" type="text" placeholder="feature/my-focused-fix" spellcheck="false" />
-        <label for="input-message">Commit message</label>
-        <textarea id="input-message" rows="3" placeholder="fix: correct off-by-one in pagination"></textarea>
-        <div class="modal-actions">
-          <button id="btn-modal-cancel" class="btn btn-secondary">Cancel</button>
-          <button id="btn-modal-confirm" class="btn btn-primary">Create</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Status bar at bottom -->
-    <div id="status-bar">
-      <span id="status-text">Select the changes you want in your PR, then click "Create Branch &amp; Commit".</span>
-      <span id="selection-count"></span>
     </div>
   </div>
-
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;
@@ -321,8 +262,6 @@ export class DiffPanelProvider implements vscode.Disposable {
 function getNonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let nonce = '';
-  for (let i = 0; i < 32; i++) {
-    nonce += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
+  for (let i = 0; i < 32; i++) nonce += chars.charAt(Math.floor(Math.random() * chars.length));
   return nonce;
 }

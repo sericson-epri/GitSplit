@@ -9,103 +9,46 @@
   --border: var(--vscode-panel-border, #404040);
   --accent: var(--vscode-button-background, #0e639c);
   --accent-hover: var(--vscode-button-hoverBackground, #1177bb);
-  --accent-fg: var(--vscode-button-foreground, #fff);
-  --secondary-bg: var(--vscode-button-secondaryBackground, #3a3d41);
-  --secondary-fg: var(--vscode-button-secondaryForeground, #ccc);
-  --secondary-hover: var(--vscode-button-secondaryHoverBackground, #45494e);
-  --add-bg: var(--vscode-diffEditor-insertedLineBackground, rgba(0,255,0,.1));
-  --add-fg: #6a9955;
-  --del-bg: var(--vscode-diffEditor-removedLineBackground, rgba(255,0,0,.1));
-  --del-fg: #f44747;
+  --add-bg: var(--vscode-diffEditor-insertedLineBackground, rgba(0,255,0,.12));
+  --add-gutter: var(--vscode-diffEditor-insertedTextBackground, rgba(0,200,0,.25));
+  --add-fg: var(--vscode-gitDecoration-addedResourceForeground, #81b88b);
+  --del-bg: var(--vscode-diffEditor-removedLineBackground, rgba(255,0,0,.12));
+  --del-gutter: var(--vscode-diffEditor-removedTextBackground, rgba(200,0,0,.25));
+  --del-fg: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
   --ctx-fg: var(--vscode-editor-foreground, #d4d4d4);
-  --hunk-bg: var(--vscode-editorLineNumber-foreground, #555);
-  --toolbar-h: 46px;
-  --status-h: 28px;
-  --file-panel-w: 240px;
+  --linenum-fg: var(--vscode-editorLineNumber-foreground, #858585);
+  --hunk-bg: rgba(100,100,220,.1);
+  --hunk-fg: var(--vscode-editorLineNumber-foreground, #858585);
   font-family: var(--vscode-font-family, "Segoe UI", system-ui, sans-serif);
   font-size: var(--vscode-font-size, 13px);
   color: var(--fg);
   background: var(--bg);
 }
 
-body { overflow: hidden; height: 100vh; }
+body { margin: 0; height: 100vh; overflow: hidden; }
 
-/* ── Layout ─────────────────────────────────────────────────────────────── */
+/* ── App shell ───────────────────────────────────────────────────────────── */
 #app {
   display: flex;
   flex-direction: column;
   height: 100vh;
 }
 
-#toolbar {
+/* ── File header bar ─────────────────────────────────────────────────────── */
+#file-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: var(--toolbar-h);
-  padding: 0 12px;
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.logo {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: .5px;
-  color: var(--accent);
-}
-
-#toolbar-actions { display: flex; gap: 6px; align-items: center; }
-
-#main-area {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-}
-
-#file-list-panel {
-  width: var(--file-panel-w);
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--border);
-  overflow: hidden;
-}
-
-.panel-header {
-  padding: 6px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .8px;
-  color: var(--vscode-sideBarSectionHeader-foreground, #bbb);
+  gap: 8px;
+  padding: 5px 10px;
   background: var(--bg-panel-header);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-}
-
-#file-list {
-  overflow-y: auto;
-  flex: 1;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  cursor: pointer;
-  border-left: 2px solid transparent;
-  transition: background .1s;
   font-size: 12px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  min-height: 30px;
 }
-.file-item:hover { background: rgba(255,255,255,.05); }
-.file-item.active {
-  background: rgba(255,255,255,.07);
-  border-left-color: var(--accent);
-}
-.file-item .file-badge {
+
+#file-header .file-badge {
   font-size: 10px;
   font-weight: 700;
   padding: 1px 4px;
@@ -116,89 +59,73 @@ body { overflow: hidden; height: 100vh; }
 .file-badge.del  { background: rgba(255,80,80,.2);   color: #f47474; }
 .file-badge.mod  { background: rgba(80,150,255,.2);  color: #5096ff; }
 .file-badge.bin  { background: rgba(150,150,150,.2); color: #aaa; }
-.file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-sel-count {
-  margin-left: auto;
-  flex-shrink: 0;
-  font-size: 10px;
-  color: var(--vscode-editorLineNumber-foreground, #666);
+
+#file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
-#diff-panel {
+/* ── Diff scroll area ────────────────────────────────────────────────────── */
+#diff-scroll {
   flex: 1;
   overflow: auto;
   background: var(--bg);
 }
 
 #diff-content {
-  padding: 8px;
   min-width: max-content;
 }
 
 .placeholder {
-  padding: 24px;
-  color: var(--vscode-editorLineNumber-foreground, #666);
+  padding: 24px 16px;
+  color: var(--linenum-fg);
   font-style: italic;
+  font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
 }
-
-/* ── Diff file block ─────────────────────────────────────────────────────── */
-.diff-file {
-  margin-bottom: 20px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.diff-file-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: var(--bg-panel-header);
-  border-bottom: 1px solid var(--border);
-  font-size: 12px;
-  font-family: var(--vscode-editor-font-family, monospace);
-}
-
-.diff-file-header .file-badge { font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 3px; }
-
-.hunk-select-all {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--accent);
-  cursor: pointer;
-  background: none;
-  border: none;
-  text-decoration: underline;
-}
-.hunk-select-all:hover { color: var(--accent-hover); }
 
 /* ── Hunk ────────────────────────────────────────────────────────────────── */
-.diff-hunk { border-top: 1px solid var(--border); }
-.diff-hunk:first-of-type { border-top: none; }
+.diff-hunk {}
 
-.hunk-header {
+.hunk-header-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 3px 10px;
-  background: rgba(100,100,200,.08);
-  font-family: var(--vscode-editor-font-family, monospace);
-  font-size: 11px;
-  color: var(--hunk-bg);
+  background: var(--hunk-bg);
+  border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   user-select: none;
+  min-height: 22px;
 }
-.hunk-toggle-all {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--accent);
+
+/* checkbox gutter cell on hunk row */
+.hunk-cb-cell {
+  width: 20px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hunk-cb-cell input[type=checkbox] {
+  accent-color: var(--accent);
+  width: 12px; height: 12px;
   cursor: pointer;
-  background: none;
-  border: none;
-  text-decoration: underline;
 }
-.hunk-toggle-all:hover { color: var(--accent-hover); }
+
+/* two gutter number columns kept blank on hunk row */
+.hunk-num-spacer {
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.hunk-label {
+  flex: 1;
+  padding: 2px 8px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: var(--hunk-fg);
+  white-space: nowrap;
+}
 
 /* ── Diff lines ──────────────────────────────────────────────────────────── */
 .diff-line {
@@ -209,45 +136,37 @@ body { overflow: hidden; height: 100vh; }
   line-height: 1.5;
   min-height: 20px;
 }
-.diff-line.selectable { cursor: pointer; }
-.diff-line.selectable:hover .line-content { filter: brightness(1.15); }
 
-.diff-line.add { background: var(--add-bg); }
-.diff-line.del { background: var(--del-bg); }
-.diff-line.add.selected { background: rgba(0,200,0,.22); }
-.diff-line.del.selected { background: rgba(255,60,60,.22); }
-.diff-line.add:not(.selected) { opacity: .55; }
-.diff-line.del:not(.selected) { opacity: .55; }
-
-.line-checkbox-cell {
+/* line checkbox cell */
+.line-cb-cell {
+  width: 20px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
   flex-shrink: 0;
-  padding: 0 2px;
 }
-.line-checkbox-cell input[type=checkbox] {
+.line-cb-cell input[type=checkbox] {
   accent-color: var(--accent);
-  width: 12px;
-  height: 12px;
+  width: 12px; height: 12px;
   cursor: pointer;
 }
 
+/* line number gutter cells */
 .line-num {
   width: 44px;
   text-align: right;
   padding: 0 6px;
   flex-shrink: 0;
-  color: var(--vscode-editorLineNumber-foreground, #555);
+  color: var(--linenum-fg);
   user-select: none;
   font-size: 11px;
-  line-height: inherit;
   display: flex;
   align-items: center;
   justify-content: flex-end;
 }
 
+/* +/- sign */
 .line-sign {
   width: 14px;
   text-align: center;
@@ -258,92 +177,46 @@ body { overflow: hidden; height: 100vh; }
   align-items: center;
   justify-content: center;
 }
-.diff-line.add .line-sign { color: var(--add-fg); }
-.diff-line.del .line-sign { color: var(--del-fg); }
-.diff-line.ctx .line-sign { color: transparent; }
 
+/* code content */
 .line-content {
   flex: 1;
-  padding: 0 4px;
+  padding: 0 6px;
   white-space: pre;
   overflow: visible;
-  color: var(--fg);
 }
+
+/* context line */
+.diff-line.context .line-num   { background: var(--bg); }
+.diff-line.context .line-sign  { color: transparent; }
+.diff-line.context .line-content { color: var(--ctx-fg); }
+
+/* addition */
+.diff-line.add { background: var(--add-bg); }
+.diff-line.add .line-num  { background: var(--add-gutter); }
+.diff-line.add .line-sign { color: var(--add-fg); }
 .diff-line.add .line-content { color: var(--add-fg); }
+
+/* deletion */
+.diff-line.del { background: var(--del-bg); }
+.diff-line.del .line-num  { background: var(--del-gutter); }
+.diff-line.del .line-sign { color: var(--del-fg); }
 .diff-line.del .line-content { color: var(--del-fg); }
-.diff-line.ctx .line-content { color: var(--ctx-fg); }
 
-/* ── Buttons ─────────────────────────────────────────────────────────────── */
-.btn {
-  padding: 4px 10px;
-  border-radius: 3px;
-  font-size: 12px;
+/* deselected changed lines are faded */
+.diff-line.add.deselected,
+.diff-line.del.deselected {
+  opacity: 0.45;
+}
+
+/* clickable rows */
+.diff-line.add,
+.diff-line.del {
   cursor: pointer;
-  border: none;
-  outline: none;
-  transition: background .1s;
 }
-.btn:disabled { opacity: .4; cursor: not-allowed; }
-.btn-primary   { background: var(--accent);       color: var(--accent-fg); }
-.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
-.btn-secondary { background: var(--secondary-bg); color: var(--secondary-fg); }
-.btn-secondary:hover:not(:disabled) { background: var(--secondary-hover); }
-
-/* ── Modal ───────────────────────────────────────────────────────────────── */
-#modal-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,.55);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-}
-#modal-overlay.hidden { display: none; }
-#modal {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 20px 24px;
-  width: min(480px, 90vw);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-#modal h2 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
-#modal label { font-size: 12px; color: var(--vscode-input-placeholderForeground, #888); }
-#modal input, #modal textarea {
-  width: 100%;
-  background: var(--vscode-input-background, #3c3c3c);
-  color: var(--vscode-input-foreground, #d4d4d4);
-  border: 1px solid var(--vscode-input-border, #555);
-  border-radius: 3px;
-  padding: 6px 8px;
-  font-family: inherit;
-  font-size: 13px;
-  outline: none;
-  resize: vertical;
-}
-#modal input:focus, #modal textarea:focus {
-  border-color: var(--accent);
-}
-.modal-actions {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 4px;
-}
-
-/* ── Status bar ──────────────────────────────────────────────────────────── */
-#status-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: var(--status-h);
-  padding: 0 12px;
-  background: var(--vscode-statusBar-background, #007acc);
-  color: var(--vscode-statusBar-foreground, #fff);
-  font-size: 12px;
-  flex-shrink: 0;
+.diff-line.add:hover,
+.diff-line.del:hover {
+  filter: brightness(1.12);
 }
 
 /* ── Progress / error banners ────────────────────────────────────────────── */
@@ -352,9 +225,6 @@ body { overflow: hidden; height: 100vh; }
   margin: 8px;
   border-radius: 4px;
   font-size: 12px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
 }
 .banner.info    { background: rgba(0,120,210,.2); border: 1px solid rgba(0,120,210,.4); }
 .banner.error   { background: rgba(220,40,40,.2); border: 1px solid rgba(220,40,40,.4); color: #f99; }
@@ -367,7 +237,7 @@ body { overflow: hidden; height: 100vh; }
   font-size: 11px;
 }
 
-/* ── Scrollbar styling ───────────────────────────────────────────────────── */
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }

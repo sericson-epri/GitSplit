@@ -1,70 +1,124 @@
 import * as vscode from 'vscode';
 import { GitService } from './git/gitService';
 import { DiffPanelProvider } from './webview/diffPanelProvider';
-
-let panelProvider: DiffPanelProvider | undefined;
+import { GitSplitViewProvider } from './views/gitSplitViewProvider';
+import { SelectionStore } from './views/selectionStore';
+import { DiffFile } from './git/diffParser';
 
 export function activate(context: vscode.ExtensionContext): void {
-  const cmd = vscode.commands.registerCommand('gitSplit.selectChanges', async () => {
-    // Resolve workspace root
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!workspaceRoot) {
-      vscode.window.showErrorMessage('GitSplit: No workspace folder is open.');
-      return;
-    }
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!workspaceRoot) return;
 
-    const gitService = new GitService(workspaceRoot);
+  const gitService = new GitService(workspaceRoot);
+  const store = new SelectionStore();
 
-    // Verify the folder is a git repo
-    try {
-      await gitService.currentBranch();
-    } catch {
-      vscode.window.showErrorMessage(
-        'GitSplit: The current workspace is not inside a Git repository.',
-      );
-      return;
-    }
+  let diffFiles: DiffFile[] = [];
 
-    // Warn about uncommitted changes (informational — provider handles stashing)
-    const dirty = await gitService.hasUncommittedChanges().catch(() => false);
-    if (dirty) {
-      const choice = await vscode.window.showWarningMessage(
-        'GitSplit: Your working tree has uncommitted changes. They will be stashed automatically before creating the clean branch and restored afterwards.',
-        { modal: false },
-        'OK',
-        'Cancel',
-      );
-      if (choice !== 'OK') return;
-    }
+  // ── Diff panel (single-file webview) ─────────────────────────────────────
+  const diffPanel = new DiffPanelProvider(
+    context.extensionUri,
+    gitService,
+    workspaceRoot,
+    store,
+    (fileIndex) => treeProvider.refreshFile(fileIndex),
+  );
+  context.subscriptions.push(diffPanel);
 
-    const config = vscode.workspace.getConfiguration('gitSplit');
-    const baseBranch: string = config.get('baseBranch', 'main');
+  // ── Tree view provider ────────────────────────────────────────────────────
+  const treeProvider = new GitSplitViewProvider(
+    store,
+    (file) => diffPanel.showFile(file),
+  );
 
-    // Reuse or create the panel provider
-    if (!panelProvider || isPanelDisposed()) {
-      panelProvider = new DiffPanelProvider(
-        context.extensionUri,
-        gitService,
-        workspaceRoot,
-      );
-      context.subscriptions.push(panelProvider);
-    }
-
-    await panelProvider.show(baseBranch);
+  const treeView = vscode.window.createTreeView('gitSplitView', {
+    treeDataProvider: treeProvider,
+    showCollapseAll: false,
+    canSelectMany: false,
+    manageCheckboxStateManually: true,
   });
 
-  context.subscriptions.push(cmd);
+  treeView.onDidChangeCheckboxState(
+    (e) => treeProvider.handleCheckboxChange(e.items),
+    undefined,
+    context.subscriptions,
+  );
+
+  context.subscriptions.push(treeView, treeProvider);
+
+  // ── Load diff helper ──────────────────────────────────────────────────────
+  async function loadDiff(): Promise<void> {
+    const config = vscode.workspace.getConfiguration('gitSplit');
+    const baseBranch: string = config.get('baseBranch', 'main');
+    try {
+      diffFiles = await gitService.getDiff(baseBranch);
+      treeProvider.loadFiles(diffFiles);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      vscode.window.showErrorMessage(`GitSplit: Failed to load diff — ${msg}`);
+    }
+  }
+
+  // ── Commands ──────────────────────────────────────────────────────────────
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('gitSplit.refresh', async () => {
+      await loadDiff();
+    }),
+
+    vscode.commands.registerCommand('gitSplit.openFileDiff', (file: DiffFile) => {
+      diffPanel.showFile(file);
+    }),
+
+    vscode.commands.registerCommand('gitSplit.createBranch', async () => {
+      if (store.totalSelected() === 0) {
+        vscode.window.showWarningMessage(
+          'GitSplit: No lines are selected. Select lines in the diff view first.',
+        );
+        return;
+      }
+
+      const branchName = await vscode.window.showInputBox({
+        title: 'GitSplit: New Branch Name',
+        prompt: 'Enter a name for the new branch',
+        placeHolder: 'feature/my-focused-fix',
+        validateInput: (v) => v.trim() ? undefined : 'Branch name cannot be empty.',
+      });
+      if (!branchName) return;
+
+      const commitMessage = await vscode.window.showInputBox({
+        title: 'GitSplit: Commit Message',
+        prompt: 'Enter a commit message for the selected changes',
+        placeHolder: 'fix: correct off-by-one in pagination',
+        validateInput: (v) => v.trim() ? undefined : 'Commit message cannot be empty.',
+      });
+      if (!commitMessage) return;
+
+      const config = vscode.workspace.getConfiguration('gitSplit');
+      const baseBranch: string = config.get('baseBranch', 'main');
+
+      await diffPanel.handleCreateBranch(
+        branchName.trim(),
+        commitMessage.trim(),
+        baseBranch,
+        diffFiles,
+      );
+
+      // Reload diff after branch creation (we're back on original branch)
+      await loadDiff();
+    }),
+
+    // Keep the old command registered so any existing keybindings still work
+    vscode.commands.registerCommand('gitSplit.selectChanges', async () => {
+      await loadDiff();
+    }),
+  );
+
+  // ── Auto-load on activation if repo is valid ──────────────────────────────
+  gitService.currentBranch()
+    .then(() => loadDiff())
+    .catch(() => { /* not a git repo — tree stays empty */ });
 }
 
 export function deactivate(): void {
-  panelProvider?.dispose();
-}
-
-function isPanelDisposed(): boolean {
-  try {
-    // DiffPanelProvider sets panel to undefined when disposed
-    return panelProvider === undefined;
-  } catch {
-    return true;
-  }
+  // subscriptions disposed automatically
 }
