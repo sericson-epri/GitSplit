@@ -20,6 +20,8 @@
   const fileBadgeEl  = /** @type {HTMLElement} */ (document.getElementById('file-badge'));
   const filePathEl   = /** @type {HTMLElement} */ (document.getElementById('file-path'));
   const diffContentEl = /** @type {HTMLElement} */ (document.getElementById('diff-content'));
+  const btnSelect    = /** @type {HTMLButtonElement} */ (document.getElementById('btn-select-highlighted'));
+  const btnDeselect  = /** @type {HTMLButtonElement} */ (document.getElementById('btn-deselect-highlighted'));
 
   // ── Message handling ──────────────────────────────────────────────────────
   window.addEventListener('message', (/** @type {MessageEvent} */ e) => {
@@ -234,4 +236,104 @@
     if (file.isDeleted) return { label: 'DEL', cls: 'del' };
     return { label: 'MOD', cls: 'mod' };
   }
+
+  // ── Highlighted selection helpers ──────────────────────────────────────────
+
+  /**
+   * Return the line IDs of all changed (add/del) diff lines that overlap
+   * with the current native text selection.
+   * @returns {string[]}
+   */
+  function getHighlightedLineIds() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return [];
+
+    const range = sel.getRangeAt(0);
+    /** @type {string[]} */
+    const ids = [];
+
+    for (const [id, entry] of lineCheckboxMap) {
+      if (rowIntersectsRange(entry.row, range)) {
+        ids.push(id);
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * Check whether a DOM element intersects a Range (text selection).
+   * @param {HTMLElement} el
+   * @param {Range} range
+   * @returns {boolean}
+   */
+  function rowIntersectsRange(el, range) {
+    const elRange = document.createRange();
+    elRange.selectNodeContents(el);
+    // Ranges overlap when start of one is before end of the other and vice-versa
+    return range.compareBoundaryPoints(Range.END_TO_START, elRange) <= 0 &&
+           range.compareBoundaryPoints(Range.START_TO_END, elRange) >= 0;
+  }
+
+  /**
+   * Toggle the given line IDs to a specific checked state, updating UI and notifying the host.
+   * @param {string[]} ids
+   * @param {boolean} checked
+   */
+  function batchToggleLines(ids, checked) {
+    if (ids.length === 0) return;
+
+    for (const id of ids) {
+      if (checked) selectedIds.add(id);
+      else selectedIds.delete(id);
+      const entry = lineCheckboxMap.get(id);
+      if (entry) {
+        entry.cb.checked = checked;
+        entry.row.classList.toggle('deselected', !checked);
+      }
+    }
+
+    // Update any parent hunk checkboxes that may be affected
+    document.querySelectorAll('.diff-hunk').forEach((hunkEl) => {
+      const hunkCb = /** @type {HTMLInputElement | null} */ (
+        hunkEl.querySelector('.hunk-cb-cell input[type=checkbox]')
+      );
+      if (!hunkCb) return;
+      const hunkLineIds = Array.from(hunkEl.querySelectorAll('.line-cb-cell input[type=checkbox]'))
+        .map((/** @type {HTMLInputElement} */ cb) => cb.dataset.id)
+        .filter(Boolean);
+      if (hunkLineIds.some((lid) => ids.includes(/** @type {string} */ (lid)))) {
+        updateHunkCheckbox(hunkCb, /** @type {string[]} */ (hunkLineIds));
+      }
+    });
+
+    vscode.postMessage({ type: 'batchToggle', lineIds: ids, checked });
+  }
+
+  // ── Button handlers ────────────────────────────────────────────────────────
+
+  btnSelect.addEventListener('click', () => {
+    const ids = getHighlightedLineIds();
+    batchToggleLines(ids, true);
+  });
+
+  btnDeselect.addEventListener('click', () => {
+    const ids = getHighlightedLineIds();
+    batchToggleLines(ids, false);
+  });
+
+  // ── Keyboard shortcuts (Ctrl+Shift+S / Ctrl+Shift+D) ──────────────────────
+
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && !e.altKey) {
+      if (e.key === 'S' || e.key === 's') {
+        e.preventDefault();
+        const ids = getHighlightedLineIds();
+        batchToggleLines(ids, true);
+      } else if (e.key === 'D' || e.key === 'd') {
+        e.preventDefault();
+        const ids = getHighlightedLineIds();
+        batchToggleLines(ids, false);
+      }
+    }
+  });
 })();

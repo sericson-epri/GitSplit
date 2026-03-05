@@ -64,7 +64,29 @@ body { margin: 0; height: 100vh; overflow: hidden; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+}
+
+.header-spacer { flex: 1; }
+
+/* Select / Deselect highlighted buttons */
+.header-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--vscode-button-foreground, #fff);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.header-btn:hover { background: var(--accent-hover); }
+.header-btn.deselect {
+  background: transparent;
+  color: var(--fg);
+}
+.header-btn.deselect:hover {
+  background: rgba(255,255,255,.08);
 }
 
 /* ── Diff scroll area ────────────────────────────────────────────────────── */

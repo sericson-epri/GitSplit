@@ -6,9 +6,10 @@ import { SelectionStore } from '../views/selectionStore';
 
 interface LineToggleMessage   { type: 'lineToggle';  id: string; checked: boolean; }
 interface HunkToggleMessage   { type: 'hunkToggle';  lineIds: string[]; checked: boolean; }
+interface BatchToggleMessage  { type: 'batchToggle'; lineIds: string[]; checked: boolean; }
 interface ReadyMessage        { type: 'ready'; }
 
-type WebviewInbound = LineToggleMessage | HunkToggleMessage | ReadyMessage;
+type WebviewInbound = LineToggleMessage | HunkToggleMessage | BatchToggleMessage | ReadyMessage;
 
 /** VS Code webview panel that shows a single file's diff for line-level selection. */
 export class DiffPanelProvider implements vscode.Disposable {
@@ -82,6 +83,12 @@ export class DiffPanelProvider implements vscode.Disposable {
     }
 
     if (msg.type === 'hunkToggle') {
+      this.store.setHunk(msg.lineIds, msg.checked);
+      if (this.currentFile) this.onSelectionChanged(this.currentFile.index);
+      return;
+    }
+
+    if (msg.type === 'batchToggle') {
       this.store.setHunk(msg.lineIds, msg.checked);
       if (this.currentFile) this.onSelectionChanged(this.currentFile.index);
       return;
@@ -206,6 +213,9 @@ export class DiffPanelProvider implements vscode.Disposable {
     <div id="file-header">
       <span id="file-badge" class="file-badge mod"></span>
       <span id="file-path">—</span>
+      <span class="header-spacer"></span>
+      <button id="btn-select-highlighted" class="header-btn" title="Select highlighted lines (Ctrl+Shift+S)">✓ Select</button>
+      <button id="btn-deselect-highlighted" class="header-btn deselect" title="Deselect highlighted lines (Ctrl+Shift+D)">✗ Deselect</button>
     </div>
     <div id="diff-scroll">
       <div id="diff-content">
