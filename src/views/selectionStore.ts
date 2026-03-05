@@ -72,6 +72,17 @@ export class SelectionStore {
     return 0.5;
   }
 
+  /** Select or deselect every line across all files. */
+  setAll(select: boolean): void {
+    if (select) {
+      for (const ids of this.fileLineIds.values()) {
+        for (const id of ids) this.selected.add(id);
+      }
+    } else {
+      this.selected.clear();
+    }
+  }
+
   getSelectedIds(): string[] {
     return Array.from(this.selected);
   }

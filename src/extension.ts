@@ -69,6 +69,16 @@ export function activate(context: vscode.ExtensionContext): void {
       diffPanel.showFile(file);
     }),
 
+    vscode.commands.registerCommand('gitSplit.selectAll', () => {
+      store.setAll(true);
+      treeProvider.refreshFile(-1);
+    }),
+
+    vscode.commands.registerCommand('gitSplit.deselectAll', () => {
+      store.setAll(false);
+      treeProvider.refreshFile(-1);
+    }),
+
     vscode.commands.registerCommand('gitSplit.createBranch', async () => {
       if (store.totalSelected() === 0) {
         vscode.window.showWarningMessage(
@@ -78,27 +88,18 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       const branchName = await vscode.window.showInputBox({
-        title: 'GitSplit: New Branch Name',
+        title: 'GitSplit: Create New Branch',
         prompt: 'Enter a name for the new branch',
         placeHolder: 'feature/my-focused-fix',
         validateInput: (v) => v.trim() ? undefined : 'Branch name cannot be empty.',
       });
       if (!branchName) return;
 
-      const commitMessage = await vscode.window.showInputBox({
-        title: 'GitSplit: Commit Message',
-        prompt: 'Enter a commit message for the selected changes',
-        placeHolder: 'fix: correct off-by-one in pagination',
-        validateInput: (v) => v.trim() ? undefined : 'Commit message cannot be empty.',
-      });
-      if (!commitMessage) return;
-
       const config = vscode.workspace.getConfiguration('gitSplit');
       const baseBranch: string = config.get('baseBranch', 'main');
 
       await diffPanel.handleCreateBranch(
         branchName.trim(),
-        commitMessage.trim(),
         baseBranch,
         diffFiles,
       );

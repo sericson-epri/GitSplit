@@ -89,10 +89,9 @@ export class DiffPanelProvider implements vscode.Disposable {
     }
   }
 
-  /** Create the new branch from the current selection in the store. */
+  /** Create the new branch and copy selected changes to the working tree (unstaged). */
   async handleCreateBranch(
     branchName: string,
-    commitMessage: string,
     baseBranch: string,
     files: DiffFile[],
   ): Promise<void> {
@@ -145,9 +144,9 @@ export class DiffPanelProvider implements vscode.Disposable {
           progress.report({ message: `Creating branch "${branchName}"…` });
           await this.gitService.createBranchFrom(branchName, baseBranch);
 
-          progress.report({ message: 'Applying patch…' });
+          progress.report({ message: 'Copying changes…' });
           try {
-            await this.gitService.applyPatch(patch);
+            await this.gitService.applyPatch(patch, { stage: false });
           } catch (applyErr: unknown) {
             await this.gitService.checkout(originalBranch).catch(() => undefined);
             await this.gitService.deleteBranch(branchName).catch(() => undefined);
@@ -156,36 +155,9 @@ export class DiffPanelProvider implements vscode.Disposable {
             return;
           }
 
-          progress.report({ message: 'Committing…' });
-          await this.gitService.commit(commitMessage);
-
-          const config = vscode.workspace.getConfiguration('gitSplit');
-          const autoPush: boolean = config.get('autoPush', false);
-          const autoOpenPR: boolean = config.get('autoOpenPR', true);
-          let prUrl: string | null = null;
-
-          if (autoPush) {
-            progress.report({ message: 'Pushing branch…' });
-            try {
-              await this.gitService.push(branchName);
-              prUrl = await this.gitService.getPRUrl(branchName, baseBranch);
-            } catch (pushErr: unknown) {
-              vscode.window.showWarningMessage(
-                `GitSplit: Branch committed but push failed: ${pushErr instanceof Error ? pushErr.message : String(pushErr)}`,
-              );
-            }
-          }
-
-          if (prUrl && autoOpenPR) {
-            await vscode.env.openExternal(vscode.Uri.parse(prUrl));
-          }
-
-          const pushNote = autoPush ? ' Branch pushed.' : ' Push it manually when ready.';
           vscode.window.showInformationMessage(
-            `GitSplit: Branch "${branchName}" created successfully!${pushNote}`,
+            `GitSplit: Branch "${branchName}" created with selected changes. You are now on that branch.`,
           );
-
-          await this.gitService.checkout(originalBranch).catch(() => undefined);
 
         } finally {
           if (stashed) await this.unstash().catch(() => undefined);

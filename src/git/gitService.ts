@@ -75,11 +75,13 @@ export class GitService {
 
   /**
    * Apply a patch (unified diff string) to the working tree via `git apply`.
+   * Pass `stage: false` to write changes to the working tree only (no staging).
    * Throws if there are conflicts.
    */
-  async applyPatch(patchContent: string): Promise<void> {
+  async applyPatch(patchContent: string, { stage = true }: { stage?: boolean } = {}): Promise<void> {
+    const args = stage ? ['apply', '--index', '-'] : ['apply', '-'];
     await new Promise<void>((resolve, reject) => {
-      const proc = cp.spawn('git', ['apply', '--index', '-'], {
+      const proc = cp.spawn('git', args, {
         cwd: this.repoRoot,
       });
 
