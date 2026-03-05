@@ -25,10 +25,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(diffPanel);
 
   // ── Tree view provider ────────────────────────────────────────────────────
-  const treeProvider = new GitSplitViewProvider(
-    store,
-    (file) => diffPanel.showFile(file),
-  );
+  const treeProvider = new GitSplitViewProvider(store);
 
   const treeView = vscode.window.createTreeView('gitSplitView', {
     treeDataProvider: treeProvider,
@@ -104,7 +101,7 @@ export function activate(context: vscode.ExtensionContext): void {
         diffFiles,
       );
 
-      // Reload diff after branch creation (we're back on original branch)
+      // Reload diff to reflect the current branch state
       await loadDiff();
     }),
 

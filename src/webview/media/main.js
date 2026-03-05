@@ -12,6 +12,9 @@
   let currentFile = null;
   /** Set of selected line IDs (mirrors SelectionStore in extension host) */
   const selectedIds = new Set();
+  /** Cache of line checkboxes and rows for O(1) lookup in hunk toggles */
+  /** @type {Map<string, {cb: HTMLInputElement, row: HTMLElement}>} */
+  const lineCheckboxMap = new Map();
 
   // ── DOM refs ─────────────────────────────────────────────────────────────
   const fileBadgeEl  = /** @type {HTMLElement} */ (document.getElementById('file-badge'));
@@ -37,6 +40,7 @@
   function renderFile(file, initialSelected) {
     currentFile = file;
     selectedIds.clear();
+    lineCheckboxMap.clear();
     for (const id of initialSelected) selectedIds.add(id);
 
     const displayPath = file.newPath || file.oldPath;
@@ -98,15 +102,12 @@
         if (checked) selectedIds.add(id);
         else selectedIds.delete(id);
       }
-      // Sync line checkboxes in DOM
+      // Sync line checkboxes in DOM via cached references
       for (const id of changeLineIds) {
-        const cb = /** @type {HTMLInputElement|null} */ (
-          container.querySelector(`input[data-id="${CSS.escape(id)}"]`)
-        );
-        if (cb) {
-          cb.checked = checked;
-          const row = cb.closest('.diff-line');
-          if (row) row.classList.toggle('deselected', !checked);
+        const entry = lineCheckboxMap.get(id);
+        if (entry) {
+          entry.cb.checked = checked;
+          entry.row.classList.toggle('deselected', !checked);
         }
       }
       // Tell extension host
@@ -178,6 +179,7 @@
       });
 
       cbCell.appendChild(cb);
+      lineCheckboxMap.set(line.id, { cb, row });
     }
 
     row.appendChild(cbCell);

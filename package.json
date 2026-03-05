@@ -22,7 +22,7 @@
       },
       {
         "command": "gitSplit.createBranch",
-        "title": "Create Branch & Commit",
+        "title": "Create New Branch",
         "icon": "$(git-branch-create)"
       },
       {
@@ -41,9 +41,6 @@
         "icon": "$(git-pull-request)"
       }
     ],
-    "viewsContainers": {
-      "activitybar": []
-    },
     "views": {
       "scm": [
         {
@@ -84,16 +81,6 @@
           "type": "string",
           "default": "main",
           "description": "Base branch to diff against when selecting changes."
-        },
-        "gitSplit.autoPush": {
-          "type": "boolean",
-          "default": false,
-          "description": "Automatically push the new branch to the remote after committing."
-        },
-        "gitSplit.autoOpenPR": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically open the GitHub Create PR URL in the browser after pushing."
         }
       }
     }
@@ -114,7 +101,5 @@
     "mocha": "^10.3.0",
     "typescript": "^5.3.3"
   },
-  "dependencies": {
-    "simple-git": "^3.22.0"
-  }
+  "dependencies": {}
 }

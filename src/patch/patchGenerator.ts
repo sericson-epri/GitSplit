@@ -151,9 +151,10 @@ function generateSubHunks(
 
     // Count the number of "old-file lines" between prev and curr.
     // `+` lines don't occupy old-file lines, so skip them when measuring gap.
-    const gapOldLines = effective
-      .slice(prev + 1, curr)
-      .filter((l) => l.prefix !== '+').length;
+    let gapOldLines = 0;
+    for (let j = prev + 1; j < curr; j++) {
+      if (effective[j].prefix !== '+') gapOldLines++;
+    }
 
     if (gapOldLines <= CONTEXT_LINES * 2) {
       groups[groups.length - 1].push(curr);

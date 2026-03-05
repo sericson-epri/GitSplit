@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { GitService } from '../git/gitService';
 import { generatePatch } from '../patch/patchGenerator';
 import { DiffFile } from '../git/diffParser';
@@ -58,7 +57,7 @@ export class DiffPanelProvider implements vscode.Disposable {
     }
 
     const displayPath = file.newPath || file.oldPath;
-    this.panel.title = path.basename(displayPath);
+    this.panel.title = displayPath.split('/').pop() ?? displayPath;
     this.sendFileData(file);
   }
 
@@ -102,10 +101,10 @@ export class DiffPanelProvider implements vscode.Disposable {
       return;
     }
 
-    // Check for uncommitted changes
-    if (await this.gitService.hasUncommittedChanges().catch(() => false)) {
+    const hasUncommitted = await this.gitService.hasUncommittedChanges().catch(() => false);
+    if (hasUncommitted) {
       const choice = await vscode.window.showWarningMessage(
-        'GitSplit: Your working tree has uncommitted changes. They will be stashed before creating the branch and restored afterwards.',
+        'GitSplit: Your working tree has uncommitted changes. They will be stashed before creating the branch.',
         'Continue',
         'Cancel',
       );
@@ -113,16 +112,17 @@ export class DiffPanelProvider implements vscode.Disposable {
     }
 
     let stashed = false;
+    let branchCreated = false;
     const originalBranch = await this.gitService.currentBranch().catch(() => '');
 
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: 'GitSplit', cancellable: false },
       async (progress) => {
         try {
-          stashed = await this.gitService.hasUncommittedChanges().catch(() => false);
-          if (stashed) {
+          if (hasUncommitted) {
             progress.report({ message: 'Stashing uncommitted changes…' });
-            await this.stash();
+            await this.gitService.stash();
+            stashed = true;
           }
 
           if (await this.gitService.branchExists(branchName)) {
@@ -143,43 +143,36 @@ export class DiffPanelProvider implements vscode.Disposable {
 
           progress.report({ message: `Creating branch "${branchName}"…` });
           await this.gitService.createBranchFrom(branchName, baseBranch);
+          branchCreated = true;
 
           progress.report({ message: 'Copying changes…' });
           try {
-            await this.gitService.applyPatch(patch, { stage: false });
+            await this.gitService.applyPatch(patch);
           } catch (applyErr: unknown) {
             await this.gitService.checkout(originalBranch).catch(() => undefined);
             await this.gitService.deleteBranch(branchName).catch(() => undefined);
+            branchCreated = false;
             const m = applyErr instanceof Error ? applyErr.message : String(applyErr);
             vscode.window.showErrorMessage(`GitSplit: Patch could not be applied:\n${m}`);
             return;
           }
 
+          const stashNote = stashed
+            ? ' Your previous uncommitted changes are saved in git stash.'
+            : '';
           vscode.window.showInformationMessage(
-            `GitSplit: Branch "${branchName}" created with selected changes. You are now on that branch.`,
+            `GitSplit: Branch "${branchName}" created with selected changes.${stashNote}`,
           );
 
         } finally {
-          if (stashed) await this.unstash().catch(() => undefined);
+          // Restore stash only when we're still on the original branch (error / early return).
+          // On success we stay on the new branch; the user can pop the stash after switching back.
+          if (stashed && !branchCreated) {
+            await this.gitService.unstash().catch(() => undefined);
+          }
         }
       },
     );
-  }
-
-  private async stash(): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      const cp = require('child_process') as typeof import('child_process');
-      cp.execFile('git', ['stash', 'push', '--include-untracked', '-m', 'gitsplit-auto-stash'],
-        { cwd: this.workspaceRoot }, (err) => err ? reject(err) : resolve());
-    });
-  }
-
-  private async unstash(): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      const cp = require('child_process') as typeof import('child_process');
-      cp.execFile('git', ['stash', 'pop'],
-        { cwd: this.workspaceRoot }, (err) => err ? reject(err) : resolve());
-    });
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
