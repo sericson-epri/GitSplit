@@ -1,5 +1,4 @@
 import * as cp from 'child_process';
-import * as path from 'path';
 import { parseDiff, DiffFile } from './diffParser';
 
 export class GitService {
@@ -78,8 +77,8 @@ export class GitService {
    * Pass `stage: false` to write changes to the working tree only (no staging).
    * Throws if there are conflicts.
    */
-  async applyPatch(patchContent: string, { stage = true }: { stage?: boolean } = {}): Promise<void> {
-    const args = stage ? ['apply', '--index', '-'] : ['apply', '-'];
+  async applyPatch(patchContent: string): Promise<void> {
+    const args = ['apply', '-'];
     await new Promise<void>((resolve, reject) => {
       const proc = cp.spawn('git', args, {
         cwd: this.repoRoot,
@@ -99,44 +98,11 @@ export class GitService {
     });
   }
 
-  /** Stage all changes and create a commit. */
-  async commit(message: string): Promise<void> {
-    await this.git(['commit', '-m', message]);
-  }
-
-  /** Push the current branch to the remote. */
-  async push(branch: string): Promise<void> {
-    const remote = await this.getRemoteName();
-    if (!remote) throw new Error('No git remote configured.');
-    await this.git(['push', '--set-upstream', remote, branch]);
-  }
-
   /** Return the first configured remote name (usually "origin"). */
   async getRemoteName(): Promise<string> {
     const out = await this.git(['remote']).catch(() => '');
     const remotes = out.trim().split('\n').filter(Boolean);
     return remotes[0] ?? '';
-  }
-
-  /**
-   * Return the GitHub "Create PR" URL for the given branch, or null if
-   * we can't determine the remote URL.
-   */
-  async getPRUrl(branch: string, baseBranch: string): Promise<string | null> {
-    try {
-      const remote = await this.getRemoteName();
-      if (!remote) return null;
-
-      const url = await this.git(['remote', 'get-url', remote]);
-      const repoPath = extractRepoPath(url.trim());
-      if (!repoPath) return null;
-
-      const encodedBranch = encodeURIComponent(branch);
-      const encodedBase = encodeURIComponent(baseBranch);
-      return `https://github.com/${repoPath}/compare/${encodedBase}...${encodedBranch}?expand=1`;
-    } catch {
-      return null;
-    }
   }
 
   /** Check whether the given branch name already exists locally. */
@@ -158,18 +124,14 @@ export class GitService {
   async deleteBranch(branch: string): Promise<void> {
     await this.git(['branch', '-D', branch]);
   }
-}
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+  /** Stash all changes including untracked files. */
+  async stash(): Promise<void> {
+    await this.git(['stash', 'push', '--include-untracked', '-m', 'gitsplit-auto-stash']);
+  }
 
-/**
- * Extract `owner/repo` from a GitHub remote URL.
- * Handles HTTPS (`https://github.com/owner/repo.git`) and
- * SSH (`git@github.com:owner/repo.git`) formats.
- */
-function extractRepoPath(url: string): string | null {
-  // HTTPS
-  let m = url.match(/github\.com[/:]([^/]+\/[^/]+?)(?:\.git)?$/);
-  if (m) return m[1];
-  return null;
+  /** Pop the most recent stash entry. */
+  async unstash(): Promise<void> {
+    await this.git(['stash', 'pop']);
+  }
 }

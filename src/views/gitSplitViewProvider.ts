@@ -43,12 +43,8 @@ export class GitSplitViewProvider
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private files: DiffFile[] = [];
-  private readonly disposables: vscode.Disposable[] = [];
 
-  constructor(
-    private readonly store: SelectionStore,
-    private readonly onFileOpen: (file: DiffFile) => void,
-  ) {}
+  constructor(private readonly store: SelectionStore) {}
 
   /** Load (or reload) the diff. Called by the extension when the view is shown or refreshed. */
   loadFiles(files: DiffFile[]): void {
@@ -95,6 +91,5 @@ export class GitSplitViewProvider
 
   dispose(): void {
     this._onDidChangeTreeData.dispose();
-    for (const d of this.disposables) d.dispose();
   }
 }

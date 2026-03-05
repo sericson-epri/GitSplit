@@ -66,7 +66,10 @@ export class SelectionStore {
   fileCheckState(fileIndex: number): 0 | 0.5 | 1 {
     const ids = this.fileLineIds.get(fileIndex) ?? [];
     if (ids.length === 0) return 0;
-    const count = ids.filter((id) => this.selected.has(id)).length;
+    let count = 0;
+    for (const id of ids) {
+      if (this.selected.has(id)) count++;
+    }
     if (count === 0) return 0;
     if (count === ids.length) return 1;
     return 0.5;
