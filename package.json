@@ -22,8 +22,18 @@
       },
       {
         "command": "gitSplit.createBranch",
-        "title": "Create Branch & Commit",
+        "title": "Create New Branch",
         "icon": "$(git-branch-create)"
+      },
+      {
+        "command": "gitSplit.selectAll",
+        "title": "Select All",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "gitSplit.deselectAll",
+        "title": "Deselect All",
+        "icon": "$(clear-all)"
       },
       {
         "command": "gitSplit.selectChanges",
@@ -48,12 +58,22 @@
         {
           "command": "gitSplit.createBranch",
           "when": "view == gitSplitView",
-          "group": "navigation"
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitSplit.selectAll",
+          "when": "view == gitSplitView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitSplit.deselectAll",
+          "when": "view == gitSplitView",
+          "group": "navigation@3"
         },
         {
           "command": "gitSplit.refresh",
           "when": "view == gitSplitView",
-          "group": "navigation"
+          "group": "navigation@4"
         }
       ]
     },
