@@ -1,7 +1,7 @@
 {
   "name": "gitsplit",
   "displayName": "GitSplit",
-  "description": "Cherry-pick individual changed lines from a messy Git branch and push them to a new clean branch for a focused pull request.",
+  "description": "Pick individual changed lines from a messy Git branch and push them to a new clean branch for a focused pull request.",
   "version": "0.1.0",
   "publisher": "gitsplit",
   "engines": {
@@ -22,7 +22,7 @@
       },
       {
         "command": "gitSplit.createBranch",
-        "title": "Create New Branch",
+        "title": "Create Branch & Commit",
         "icon": "$(git-branch-create)"
       },
       {
