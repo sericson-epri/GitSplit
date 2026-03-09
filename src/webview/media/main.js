@@ -316,9 +316,10 @@
   function rowIntersectsRange(el, range) {
     const elRange = document.createRange();
     elRange.selectNodeContents(el);
-    // Ranges overlap when start of one is before end of the other and vice-versa
-    return range.compareBoundaryPoints(Range.END_TO_START, elRange) <= 0 &&
-           range.compareBoundaryPoints(Range.START_TO_END, elRange) >= 0;
+    // Ranges overlap when the selection ends after the row starts and
+    // the selection starts before the row ends.
+    return range.compareBoundaryPoints(Range.END_TO_START, elRange) > 0 &&
+           range.compareBoundaryPoints(Range.START_TO_END, elRange) < 0;
   }
 
   /**
