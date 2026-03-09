@@ -89,6 +89,47 @@ body { margin: 0; height: 100vh; overflow: hidden; }
   background: rgba(255,255,255,.08);
 }
 
+.selection-actions {
+  position: fixed;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel-header);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+}
+
+.selection-actions.visible {
+  display: flex;
+}
+
+.selection-action-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--vscode-button-foreground, #fff);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.selection-action-btn:hover {
+  background: var(--accent-hover);
+}
+
+.selection-action-btn.deselect {
+  background: transparent;
+  color: var(--fg);
+}
+
+.selection-action-btn.deselect:hover {
+  background: rgba(255,255,255,.08);
+}
+
 /* ── Diff scroll area ────────────────────────────────────────────────────── */
 #diff-scroll {
   flex: 1;

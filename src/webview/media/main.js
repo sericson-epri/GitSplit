@@ -22,6 +22,11 @@
   const diffContentEl = /** @type {HTMLElement} */ (document.getElementById('diff-content'));
   const btnSelect    = /** @type {HTMLButtonElement} */ (document.getElementById('btn-select-highlighted'));
   const btnDeselect  = /** @type {HTMLButtonElement} */ (document.getElementById('btn-deselect-highlighted'));
+  const selectionActionsEl = /** @type {HTMLElement} */ (document.getElementById('selection-actions'));
+  const popupSelectBtn = /** @type {HTMLButtonElement} */ (document.getElementById('btn-popup-select'));
+  const popupDeselectBtn = /** @type {HTMLButtonElement} */ (document.getElementById('btn-popup-deselect'));
+  /** @type {string[]} */
+  let highlightedLineIds = [];
 
   // ── Message handling ──────────────────────────────────────────────────────
   window.addEventListener('message', (/** @type {MessageEvent} */ e) => {
@@ -43,6 +48,8 @@
     currentFile = file;
     selectedIds.clear();
     lineCheckboxMap.clear();
+    highlightedLineIds = [];
+    hideSelectionActions();
     for (const id of initialSelected) selectedIds.add(id);
 
     const displayPath = file.newPath || file.oldPath;
@@ -174,6 +181,8 @@
 
       // Clicking anywhere on the row toggles the checkbox
       row.addEventListener('click', (e) => {
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed) return;
         if (e.target !== cb) {
           cb.checked = !cb.checked;
           cb.dispatchEvent(new Event('change'));
@@ -260,6 +269,44 @@
     return ids;
   }
 
+  function hideSelectionActions() {
+    selectionActionsEl.classList.remove('visible');
+    selectionActionsEl.setAttribute('aria-hidden', 'true');
+  }
+
+  /**
+   * @param {DOMRect} rect
+   */
+  function positionSelectionActions(rect) {
+    const popupRect = selectionActionsEl.getBoundingClientRect();
+    const top = Math.max(8, rect.top - popupRect.height - 8);
+    const centeredLeft = rect.left + (rect.width / 2) - (popupRect.width / 2);
+    const maxLeft = Math.max(8, window.innerWidth - popupRect.width - 8);
+    const left = Math.min(Math.max(8, centeredLeft), maxLeft);
+
+    selectionActionsEl.style.top = `${top}px`;
+    selectionActionsEl.style.left = `${left}px`;
+  }
+
+  function updateSelectionActions() {
+    const sel = window.getSelection();
+    highlightedLineIds = getHighlightedLineIds();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed || highlightedLineIds.length === 0) {
+      hideSelectionActions();
+      return;
+    }
+
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      hideSelectionActions();
+      return;
+    }
+
+    selectionActionsEl.classList.add('visible');
+    selectionActionsEl.setAttribute('aria-hidden', 'false');
+    positionSelectionActions(rect);
+  }
+
   /**
    * Check whether a DOM element intersects a Range (text selection).
    * @param {HTMLElement} el
@@ -309,6 +356,18 @@
     vscode.postMessage({ type: 'batchToggle', lineIds: ids, checked });
   }
 
+  /**
+   * @param {boolean} checked
+   */
+  function applyHighlightedSelection(checked) {
+    const ids = highlightedLineIds.length > 0 ? [...highlightedLineIds] : getHighlightedLineIds();
+    batchToggleLines(ids, checked);
+    highlightedLineIds = [];
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+    hideSelectionActions();
+  }
+
   // ── Button handlers ────────────────────────────────────────────────────────
 
   btnSelect.addEventListener('click', () => {
@@ -319,6 +378,20 @@
   btnDeselect.addEventListener('click', () => {
     const ids = getHighlightedLineIds();
     batchToggleLines(ids, false);
+  });
+
+  for (const btn of [popupSelectBtn, popupDeselectBtn]) {
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+    });
+  }
+
+  popupSelectBtn.addEventListener('click', () => {
+    applyHighlightedSelection(true);
+  });
+
+  popupDeselectBtn.addEventListener('click', () => {
+    applyHighlightedSelection(false);
   });
 
   // ── Keyboard shortcuts (Ctrl+Shift+S / Ctrl+Shift+D) ──────────────────────
@@ -335,5 +408,17 @@
         batchToggleLines(ids, false);
       }
     }
+  });
+
+  document.addEventListener('selectionchange', () => {
+    updateSelectionActions();
+  });
+
+  document.addEventListener('scroll', () => {
+    if (selectionActionsEl.classList.contains('visible')) updateSelectionActions();
+  }, true);
+
+  window.addEventListener('resize', () => {
+    if (selectionActionsEl.classList.contains('visible')) updateSelectionActions();
   });
 })();
