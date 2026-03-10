@@ -258,11 +258,13 @@
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return [];
 
     const range = sel.getRangeAt(0);
+    const selectionRects = Array.from(range.getClientRects()).filter(rectHasVisibleArea);
+    if (selectionRects.length === 0) return [];
     /** @type {string[]} */
     const ids = [];
 
     for (const [id, entry] of lineCheckboxMap) {
-      if (rowIntersectsRange(entry.row, range)) {
+      if (rowIntersectsSelection(entry.row, selectionRects)) {
         ids.push(id);
       }
     }
@@ -308,18 +310,34 @@
   }
 
   /**
-   * Check whether a DOM element intersects a Range (text selection).
-   * @param {HTMLElement} el
-   * @param {Range} range
+   * @param {DOMRect | { width: number, height: number }} rect
    * @returns {boolean}
    */
-  function rowIntersectsRange(el, range) {
-    const elRange = document.createRange();
-    elRange.selectNodeContents(el);
-    // Ranges overlap when the selection ends after the row starts and
-    // the selection starts before the row ends.
-    return range.compareBoundaryPoints(Range.END_TO_START, elRange) > 0 &&
-           range.compareBoundaryPoints(Range.START_TO_END, elRange) < 0;
+  function rectHasVisibleArea(rect) {
+    return rect.width > 0 || rect.height > 0;
+  }
+
+  /**
+   * @param {DOMRect | { top: number, right: number, bottom: number, left: number }} a
+   * @param {DOMRect | { top: number, right: number, bottom: number, left: number }} b
+   * @returns {boolean}
+   */
+  function rectsIntersect(a, b) {
+    return a.top < b.bottom &&
+           a.bottom > b.top &&
+           a.left < b.right &&
+           a.right > b.left;
+  }
+
+  /**
+   * Check whether a row intersects any selection client rect.
+   * @param {HTMLElement} el
+   * @param {(DOMRect | { top: number, right: number, bottom: number, left: number, width: number, height: number })[]} selectionRects
+   * @returns {boolean}
+   */
+  function rowIntersectsSelection(el, selectionRects) {
+    const rowRect = el.getBoundingClientRect();
+    return selectionRects.some((selectionRect) => rectsIntersect(rowRect, selectionRect));
   }
 
   /**
@@ -346,8 +364,12 @@
         hunkEl.querySelector('.hunk-cb-cell input[type=checkbox]')
       );
       if (!hunkCb) return;
-      const hunkLineIds = Array.from(hunkEl.querySelectorAll('.line-cb-cell input[type=checkbox]'))
-        .map((/** @type {HTMLInputElement} */ cb) => cb.dataset.id)
+      const hunkLineIds = Array.from(
+        /** @type {NodeListOf<HTMLInputElement>} */ (
+          hunkEl.querySelectorAll('.line-cb-cell input[type=checkbox]')
+        ),
+      )
+        .map((cb) => cb.dataset.id)
         .filter(Boolean);
       if (hunkLineIds.some((lid) => ids.includes(/** @type {string} */ (lid)))) {
         updateHunkCheckbox(hunkCb, /** @type {string[]} */ (hunkLineIds));
