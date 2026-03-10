@@ -22,6 +22,11 @@
   const diffContentEl = /** @type {HTMLElement} */ (document.getElementById('diff-content'));
   const btnSelect    = /** @type {HTMLButtonElement} */ (document.getElementById('btn-select-highlighted'));
   const btnDeselect  = /** @type {HTMLButtonElement} */ (document.getElementById('btn-deselect-highlighted'));
+  const selectionActionsEl = /** @type {HTMLElement} */ (document.getElementById('selection-actions'));
+  const popupSelectBtn = /** @type {HTMLButtonElement} */ (document.getElementById('btn-popup-select'));
+  const popupDeselectBtn = /** @type {HTMLButtonElement} */ (document.getElementById('btn-popup-deselect'));
+  /** @type {string[]} */
+  let highlightedLineIds = [];
 
   // ── Message handling ──────────────────────────────────────────────────────
   window.addEventListener('message', (/** @type {MessageEvent} */ e) => {
@@ -43,6 +48,8 @@
     currentFile = file;
     selectedIds.clear();
     lineCheckboxMap.clear();
+    highlightedLineIds = [];
+    hideSelectionActions();
     for (const id of initialSelected) selectedIds.add(id);
 
     const displayPath = file.newPath || file.oldPath;
@@ -172,14 +179,6 @@
         vscode.postMessage({ type: 'lineToggle', id: line.id, checked });
       });
 
-      // Clicking anywhere on the row toggles the checkbox
-      row.addEventListener('click', (e) => {
-        if (e.target !== cb) {
-          cb.checked = !cb.checked;
-          cb.dispatchEvent(new Event('change'));
-        }
-      });
-
       cbCell.appendChild(cb);
       lineCheckboxMap.set(line.id, { cb, row });
     }
@@ -249,29 +248,86 @@
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return [];
 
     const range = sel.getRangeAt(0);
+    const selectionRects = Array.from(range.getClientRects()).filter(rectHasVisibleArea);
+    if (selectionRects.length === 0) return [];
     /** @type {string[]} */
     const ids = [];
 
     for (const [id, entry] of lineCheckboxMap) {
-      if (rowIntersectsRange(entry.row, range)) {
+      if (rowIntersectsSelection(entry.row, selectionRects)) {
         ids.push(id);
       }
     }
     return ids;
   }
 
+  function hideSelectionActions() {
+    selectionActionsEl.classList.remove('visible');
+    selectionActionsEl.setAttribute('aria-hidden', 'true');
+  }
+
   /**
-   * Check whether a DOM element intersects a Range (text selection).
-   * @param {HTMLElement} el
-   * @param {Range} range
+   * @param {DOMRect} rect
+   */
+  function positionSelectionActions(rect) {
+    const popupRect = selectionActionsEl.getBoundingClientRect();
+    const top = Math.max(8, rect.top - popupRect.height - 8);
+    const centeredLeft = rect.left + (rect.width / 2) - (popupRect.width / 2);
+    const maxLeft = Math.max(8, window.innerWidth - popupRect.width - 8);
+    const left = Math.min(Math.max(8, centeredLeft), maxLeft);
+
+    selectionActionsEl.style.top = `${top}px`;
+    selectionActionsEl.style.left = `${left}px`;
+  }
+
+  function updateSelectionActions() {
+    const sel = window.getSelection();
+    highlightedLineIds = getHighlightedLineIds();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed || highlightedLineIds.length === 0) {
+      hideSelectionActions();
+      return;
+    }
+
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      hideSelectionActions();
+      return;
+    }
+
+    selectionActionsEl.classList.add('visible');
+    selectionActionsEl.setAttribute('aria-hidden', 'false');
+    positionSelectionActions(rect);
+  }
+
+  /**
+   * @param {DOMRect | { width: number, height: number }} rect
    * @returns {boolean}
    */
-  function rowIntersectsRange(el, range) {
-    const elRange = document.createRange();
-    elRange.selectNodeContents(el);
-    // Ranges overlap when start of one is before end of the other and vice-versa
-    return range.compareBoundaryPoints(Range.END_TO_START, elRange) <= 0 &&
-           range.compareBoundaryPoints(Range.START_TO_END, elRange) >= 0;
+  function rectHasVisibleArea(rect) {
+    return rect.width > 0 || rect.height > 0;
+  }
+
+  /**
+   * @param {DOMRect | { top: number, right: number, bottom: number, left: number }} a
+   * @param {DOMRect | { top: number, right: number, bottom: number, left: number }} b
+   * @returns {boolean}
+   */
+  function rectsIntersect(a, b) {
+    return a.top < b.bottom &&
+           a.bottom > b.top &&
+           a.left < b.right &&
+           a.right > b.left;
+  }
+
+  /**
+   * Check whether a row intersects any selection client rect.
+   * @param {HTMLElement} el
+   * @param {(DOMRect | { top: number, right: number, bottom: number, left: number, width: number, height: number })[]} selectionRects
+   * @returns {boolean}
+   */
+  function rowIntersectsSelection(el, selectionRects) {
+    const rowRect = el.getBoundingClientRect();
+    return selectionRects.some((selectionRect) => rectsIntersect(rowRect, selectionRect));
   }
 
   /**
@@ -298,8 +354,12 @@
         hunkEl.querySelector('.hunk-cb-cell input[type=checkbox]')
       );
       if (!hunkCb) return;
-      const hunkLineIds = Array.from(hunkEl.querySelectorAll('.line-cb-cell input[type=checkbox]'))
-        .map((/** @type {HTMLInputElement} */ cb) => cb.dataset.id)
+      const hunkLineIds = Array.from(
+        /** @type {NodeListOf<HTMLInputElement>} */ (
+          hunkEl.querySelectorAll('.line-cb-cell input[type=checkbox]')
+        ),
+      )
+        .map((cb) => cb.dataset.id)
         .filter(Boolean);
       if (hunkLineIds.some((lid) => ids.includes(/** @type {string} */ (lid)))) {
         updateHunkCheckbox(hunkCb, /** @type {string[]} */ (hunkLineIds));
@@ -307,6 +367,18 @@
     });
 
     vscode.postMessage({ type: 'batchToggle', lineIds: ids, checked });
+  }
+
+  /**
+   * @param {boolean} checked
+   */
+  function applyHighlightedSelection(checked) {
+    const ids = highlightedLineIds.length > 0 ? [...highlightedLineIds] : getHighlightedLineIds();
+    batchToggleLines(ids, checked);
+    highlightedLineIds = [];
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+    hideSelectionActions();
   }
 
   // ── Button handlers ────────────────────────────────────────────────────────
@@ -319,6 +391,20 @@
   btnDeselect.addEventListener('click', () => {
     const ids = getHighlightedLineIds();
     batchToggleLines(ids, false);
+  });
+
+  for (const btn of [popupSelectBtn, popupDeselectBtn]) {
+    btn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+    });
+  }
+
+  popupSelectBtn.addEventListener('click', () => {
+    applyHighlightedSelection(true);
+  });
+
+  popupDeselectBtn.addEventListener('click', () => {
+    applyHighlightedSelection(false);
   });
 
   // ── Keyboard shortcuts (Ctrl+Shift+S / Ctrl+Shift+D) ──────────────────────
@@ -335,5 +421,17 @@
         batchToggleLines(ids, false);
       }
     }
+  });
+
+  document.addEventListener('selectionchange', () => {
+    updateSelectionActions();
+  });
+
+  document.addEventListener('scroll', () => {
+    if (selectionActionsEl.classList.contains('visible')) updateSelectionActions();
+  }, true);
+
+  window.addEventListener('resize', () => {
+    if (selectionActionsEl.classList.contains('visible')) updateSelectionActions();
   });
 })();

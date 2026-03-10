@@ -223,6 +223,10 @@ export class DiffPanelProvider implements vscode.Disposable {
       </div>
     </div>
   </div>
+  <div id="selection-actions" class="selection-actions" aria-hidden="true">
+    <button id="btn-popup-select" class="selection-action-btn" title="Select highlighted lines">✓ Select</button>
+    <button id="btn-popup-deselect" class="selection-action-btn deselect" title="Deselect highlighted lines">✗ Deselect</button>
+  </div>
   <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

@@ -69,7 +69,8 @@ body { margin: 0; height: 100vh; overflow: hidden; }
 .header-spacer { flex: 1; }
 
 /* Select / Deselect highlighted buttons */
-.header-btn {
+.header-btn,
+.selection-action-btn {
   font-size: 11px;
   padding: 2px 8px;
   border: 1px solid var(--border);
@@ -80,13 +81,40 @@ body { margin: 0; height: 100vh; overflow: hidden; }
   white-space: nowrap;
   flex-shrink: 0;
 }
-.header-btn:hover { background: var(--accent-hover); }
-.header-btn.deselect {
+.header-btn:hover,
+.selection-action-btn:hover { background: var(--accent-hover); }
+.header-btn.deselect,
+.selection-action-btn.deselect {
   background: transparent;
   color: var(--fg);
 }
-.header-btn.deselect:hover {
+.header-btn.deselect:hover,
+.selection-action-btn.deselect:hover {
   background: rgba(255,255,255,.08);
+}
+
+.selection-actions {
+  position: fixed;
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-panel-header);
+  font-size: 12px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  min-height: 30px;
+  box-shadow: none;
+}
+
+.selection-actions.visible {
+  display: flex;
+}
+
+.selection-action-btn {
+  padding: 2px 8px;
 }
 
 /* ── Diff scroll area ────────────────────────────────────────────────────── */
@@ -231,14 +259,10 @@ body { margin: 0; height: 100vh; overflow: hidden; }
   opacity: 0.45;
 }
 
-/* clickable rows */
-.diff-line.add,
-.diff-line.del {
-  cursor: pointer;
-}
+/* changed lines keep hover emphasis but are not click targets outside the checkbox */
 .diff-line.add:hover,
 .diff-line.del:hover {
-  filter: brightness(1.12);
+  filter: brightness(1.08);
 }
 
 /* ── Progress / error banners ────────────────────────────────────────────── */
