@@ -179,16 +179,6 @@
         vscode.postMessage({ type: 'lineToggle', id: line.id, checked });
       });
 
-      // Clicking anywhere on the row toggles the checkbox
-      row.addEventListener('click', (e) => {
-        const sel = window.getSelection();
-        if (sel && !sel.isCollapsed) return;
-        if (e.target !== cb) {
-          cb.checked = !cb.checked;
-          cb.dispatchEvent(new Event('change'));
-        }
-      });
-
       cbCell.appendChild(cb);
       lineCheckboxMap.set(line.id, { cb, row });
     }

@@ -4,6 +4,10 @@
   "description": "Pick individual changed lines from a messy Git branch and push them to a new clean branch for a focused pull request.",
   "version": "0.1.0",
   "publisher": "gitsplit",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sericson-epri/GitSplit.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
